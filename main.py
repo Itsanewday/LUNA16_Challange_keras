@@ -7,6 +7,7 @@ from keras.datasets import mnist
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv3D, MaxPooling3D
+from keras.callbacks import EarlyStopping
 from keras import backend as K
 from Provider import writeToDebugFile
 
@@ -32,7 +33,7 @@ input_shape = (1, voxelWidthZ, voxelWidthXY, voxelWidthXY)
 K.set_image_data_format('channels_first')
 
 model = Sequential()
-model.add(Conv3D(32, kernel_size=(5, 5, 5), activation='relu', input_shape=input_shape))
+model.add(Conv3D(32, kernel_size=(3, 3, 3), activation='relu', input_shape=input_shape))
 model.add(MaxPooling3D(pool_size=(3, 3, 3)))
 model.add(Dropout(0.25))
 model.add(Conv3D(64, (3, 3, 3), activation='relu'))
@@ -45,7 +46,7 @@ model.add(Dense(128, activation='relu'))
 model.add(Dropout(0.25))
 model.add(Dense(num_classes, activation='softmax'))
 
-model.compile(loss=keras.losses.categorical_crossentropy,
+model.compile(loss=keras.losses.binary_crossentropy,
               optimizer=keras.optimizers.Adadelta(),
               metrics=['accuracy'])
 
@@ -207,11 +208,17 @@ for outerSet in range(NUM_SET):
             writeToDebugFile('Model Train Starting -> ' + str(candIndex))
 
             hist = model.fit(totalList, totalLabel, batch_size=batch_size, epochs=epochs, verbose=1)
-            writeToDebugFile(hist.history)
-
+            writeToDebugFile(str(hist.history))
+	    	
             writeToDebugFile('Model Train Finished -> ' + str(candIndex))
+  	    writeToDebugFile('Model acc: '+str(hist.history['acc'][0]))
+
+	    if (float(hist.history['acc'][0]) > 0.98):
+	    	writeToDebugFile('Early Stopping on Set -> ' + str(outerSet))
+		break	
+
         except Exception, e:
-            writeToDebugFile('ERROR ->' + str(e))
+            writeToDebugFile('ERROR on Training ->' + str(e))
 
 
     model.save('LUNA16_Model.h5')
@@ -225,14 +232,14 @@ for outerSet in range(NUM_SET):
         for cand in candidatesList:
             if (cand[0] == file):
                 testList.append(cand)
+	
+        originalFilePath = originalSubsetDirectoryBase+ str(outerSet) + '/' + file + '.mhd'
+        newFilePath = resampledSubsetDirectoryBase + str(outerSet) + '/' + file + '.npy'
+
+        volumeImage, numpyOrigin, numpySpacing = Provider.load_itk_image(originalFilePath)
+        newVolume = np.load(newFilePath)
 
         for candidateItem in testList:
-            originalFilePath = originalSubsetDirectoryBase+ str(outerSet) + '/' + candidateItem[0] + '.mhd'
-            newFilePath = resampledSubsetDirectoryBase + str(outerSet) + '/' + candidateItem[0] + '.npy'
-
-            volumeImage, numpyOrigin, numpySpacing = Provider.load_itk_image(originalFilePath)
-            newVolume = np.load(newFilePath)
-
             voxelWorldCoor = np.asarray([float(candidateItem[3]), float(candidateItem[2]), float(candidateItem[1])])
             newGeneratedCoor = Provider.worldToVoxelCoord(voxelWorldCoor, numpyOrigin,
                                                           RESIZE_SPACING)
@@ -258,14 +265,28 @@ for outerSet in range(NUM_SET):
             patch = Provider.normalizePlanes(patch)
             testPatchList.append(patch)
 
-        testPatchList = np.asarray(testPatchList)
-        testPatchList = testPatchList.reshape(testPatchList[0], 1 ,voxelWidthZ, voxelWidthXY, voxelWidthXY)
-        predictions = model.predict(testPatchList, batch_size=32, verbose=0)
+        try:
+            testPatchList = np.asarray(testPatchList)
+            testPatchList = testPatchList.reshape(testPatchList.shape[0], 1 ,voxelWidthZ, voxelWidthXY, voxelWidthXY)
 
-        for i in range(len(testList)):
-            line = testList[i][0] +','+ testList[i][1]+','+testList[i][2]+','+testList[i][3]+','+predictions[0]
-            outputFile.append(line)
+            predictions = model.predict(testPatchList, batch_size=32, verbose=0)
+        except Exception, e:
+            writeToDebugFile('ERROR on Test Predict: -> ' + str(e))
 
+        writeToDebugFile('Recording Predictions...')
+	
+	try:
+            for i in range(len(testList)):
+                line = testList[i][0] +','+ testList[i][1]+','+testList[i][2]+','+testList[i][3]+','+str(predictions[i][1])
+                outputFile.append(line)
+	except Exception, e:
+	    writeToDebugFile('ERROR on testList append -> '+ str(e))
+
+    with open('test_'+str(outerSet)+'.csv','w') as myFile:
+        for item in outputFile:
+            myFile.write('%s\n' % item)
+
+    writeToDebugFile('SUBSET -> '+str(outerSet)+' is OVER')
 
 #Write to File
 with open('FPRED.csv','w') as myFile:
