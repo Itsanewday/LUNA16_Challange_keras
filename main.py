@@ -3,7 +3,6 @@ import numpy as np
 import Provider
 from scipy import ndimage
 import keras
-from keras.datasets import mnist
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv3D, MaxPooling3D
@@ -20,9 +19,10 @@ candidates =                   r'/media/gorkem/TI31299000D/LUNA DATA/CSVFILES/ca
 
 RESIZE_SPACING = [1,0.7,0.7]
 NUM_SET = 10
-voxelWidthXY = 42
-voxelWidthZ  = 30
+voxelWidthXY = 30
+voxelWidthZ  = 18
 outputFile = []
+outputFile.append('seriesuid,coordX,coordY,coordZ,probability')
 
 # Keras Parameters
 batch_size = 32
@@ -33,17 +33,15 @@ input_shape = (1, voxelWidthZ, voxelWidthXY, voxelWidthXY)
 K.set_image_data_format('channels_first')
 
 model = Sequential()
-model.add(Conv3D(32, kernel_size=(3, 3, 3), activation='relu', input_shape=input_shape))
+model.add(Conv3D(64, kernel_size=(3, 5, 5), activation='relu', input_shape=input_shape))
 model.add(MaxPooling3D(pool_size=(3, 3, 3)))
-model.add(Dropout(0.25))
-model.add(Conv3D(64, (3, 3, 3), activation='relu'))
+model.add(Dropout(0.20))
+model.add(Conv3D(64, (3, 5, 5), activation='relu'))
 model.add(MaxPooling3D(pool_size=(2, 2, 2)))
-model.add(Dropout(0.25))
+model.add(Dropout(0.20))
 model.add(Flatten())
-model.add(Dense(1000, activation='relu'))
-model.add(Dropout(0.25))
-model.add(Dense(128, activation='relu'))
-model.add(Dropout(0.25))
+model.add(Dense(250, activation='relu'))
+model.add(Dropout(0.20))
 model.add(Dense(num_classes, activation='softmax'))
 
 model.compile(loss=keras.losses.binary_crossentropy,
@@ -211,11 +209,15 @@ for outerSet in range(NUM_SET):
             writeToDebugFile(str(hist.history))
 	    	
             writeToDebugFile('Model Train Finished -> ' + str(candIndex))
-  	    writeToDebugFile('Model acc: '+str(hist.history['acc'][0]))
+            writeToDebugFile('Model acc: '+str(hist.history['acc'][0]))
 
-	    if (float(hist.history['acc'][0]) > 0.98):
-	    	writeToDebugFile('Early Stopping on Set -> ' + str(outerSet))
-		break	
+            # if (float(hist.history['acc'][0]) > 0.98):
+            #     writeToDebugFile('Early Stopping on Set -> ' + str(outerSet))
+            #     break
+
+            if (candIndex>300000):
+                writeToDebugFile('Early Stopping on Set -> ' + str(outerSet))
+                break
 
         except Exception, e:
             writeToDebugFile('ERROR on Training ->' + str(e))
@@ -275,16 +277,16 @@ for outerSet in range(NUM_SET):
 
         writeToDebugFile('Recording Predictions...')
 	
-	try:
+        try:
             for i in range(len(testList)):
                 line = testList[i][0] +','+ testList[i][1]+','+testList[i][2]+','+testList[i][3]+','+str(predictions[i][1])
                 outputFile.append(line)
-	except Exception, e:
-	    writeToDebugFile('ERROR on testList append -> '+ str(e))
+        except Exception, e:
+            writeToDebugFile('ERROR on testList append -> '+ str(e))
 
-    with open('test_'+str(outerSet)+'.csv','w') as myFile:
-        for item in outputFile:
-            myFile.write('%s\n' % item)
+    #with open('test_'+str(outerSet)+'.csv','w') as myFile:
+    #    for item in outputFile:
+    #        myFile.write('%s\n' % item)
 
     writeToDebugFile('SUBSET -> '+str(outerSet)+' is OVER')
 
